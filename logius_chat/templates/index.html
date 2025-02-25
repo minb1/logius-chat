@@ -6,6 +6,8 @@
     <title>Git Documentation Chat</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Add Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
             --sidebar-width: 350px;
@@ -268,6 +270,98 @@
             align-items: center;
             justify-content: center;
         }
+        
+        /* Markdown styling */
+        .message-content h1, 
+        .message-content h2, 
+        .message-content h3, 
+        .message-content h4, 
+        .message-content h5, 
+        .message-content h6 {
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            line-height: 1.25;
+            color: var(--primary-color);
+        }
+        
+        .message-content h1 {
+            font-size: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.3rem;
+        }
+        
+        .message-content h2 {
+            font-size: 1.3rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.3rem;
+        }
+        
+        .message-content h3 {
+            font-size: 1.1rem;
+        }
+        
+        .message-content h4 {
+            font-size: 1rem;
+        }
+        
+        .message-content ul, 
+        .message-content ol {
+            padding-left: 2rem;
+            margin-bottom: 1rem;
+        }
+        
+        .message-content li {
+            margin-bottom: 0.25rem;
+        }
+        
+        .message-content pre {
+            background-color: #f6f8fa;
+            border-radius: 6px;
+            padding: 16px;
+            overflow: auto;
+            margin-bottom: 1rem;
+        }
+        
+        .message-content code {
+            background-color: rgba(175, 184, 193, 0.2);
+            border-radius: 6px;
+            padding: 0.2em 0.4em;
+            font-family: monospace;
+        }
+        
+        .message-content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        
+        .message-content blockquote {
+            border-left: 4px solid var(--border-color);
+            padding-left: 1rem;
+            color: #6c757d;
+            margin-bottom: 1rem;
+        }
+        
+        .message-content strong {
+            font-weight: 600;
+        }
+        
+        .message-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        
+        .message-content table th,
+        .message-content table td {
+            border: 1px solid var(--border-color);
+            padding: 8px;
+        }
+        
+        .message-content table th {
+            background-color: #f6f8fa;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -470,12 +564,20 @@
                 const contentDiv = document.createElement('div');
                 contentDiv.classList.add('message-content');
                 
-                // Process markdown-like code blocks
-                text = text.replace(/```([\s\S]*?)```/g, function(match, code) {
-                    return `<pre><code>${code}</code></pre>`;
-                });
-                
-                contentDiv.innerHTML = text;
+                // Parse Markdown content for bot messages
+                if (sender === 'bot') {
+                    // Set options for Marked.js
+                    marked.setOptions({
+                        breaks: true,  // Add line breaks
+                        gfm: true      // Enable GitHub Flavored Markdown
+                    });
+                    
+                    // Parse the Markdown text
+                    contentDiv.innerHTML = marked.parse(text);
+                } else {
+                    // For user messages, just display the text
+                    contentDiv.textContent = text;
+                }
                 
                 messageDiv.appendChild(headerDiv);
                 messageDiv.appendChild(contentDiv);
