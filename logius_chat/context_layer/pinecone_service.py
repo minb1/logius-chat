@@ -34,7 +34,7 @@ if pinecone_available and pinecone_api_key and pinecone_environment:
     except Exception as e:
         print(f"Error initializing Pinecone: {e}")
 
-def search_similar_documents(query_embedding, top_k=20):
+def search_similar_documents(query_embedding, top_k=50):
     """
     Search Pinecone for documents similar to the query embedding.
     
@@ -56,6 +56,7 @@ def search_similar_documents(query_embedding, top_k=20):
         return []
         
     try:
+        # Query Pinecone with the embedding
         response = index.query(
             namespace="ns1",
             vector=query_embedding,
@@ -64,61 +65,76 @@ def search_similar_documents(query_embedding, top_k=20):
             include_values=False
         )
         
-        # Extract chunk IDs from the matches
-        chunk_ids = [match["metadata"].get("chunk_id") for match in response["matches"] if match["metadata"].get("chunk_id")]
+        # Extract file paths from the matches, handling both chunk_id and file_path metadata
+        file_paths = []
+        for match in response["matches"]:
+            if "metadata" in match:
+                # Try to get file_path first
+                if "file_path" in match["metadata"] and match["metadata"]["file_path"]:
+                    file_path = match["metadata"]["file_path"]
+                    # Normalize path separators
+                    file_path = file_path.replace("\\", "/")
+                    file_paths.append(file_path)
+                # If no file_path, try chunk_id
+                elif "chunk_id" in match["metadata"] and match["metadata"]["chunk_id"]:
+                    chunk_id = match["metadata"]["chunk_id"]
+                    file_path = f"{chunk_id}.txt"
+                    file_paths.append(file_path)
         
-        # If no chunk_id is found, try file_path
-        if not chunk_ids:
-            return [match["metadata"].get("file_path") for match in response["matches"] if match["metadata"].get("file_path")]
-        
-        # Convert chunk IDs to actual file paths in the data/chunks directory
-        return [os.path.join(CHUNKS_DIR, f"{chunk_id}.txt") for chunk_id in chunk_ids]
+        return file_paths
     except Exception as e:
         print(f"Error searching Pinecone: {e}")
         return []
 
 def get_chunk_content(file_paths):
     """
-    Read the content of chunk files.
+    Read the content of chunk files for prompt context.
     
     Args:
         file_paths (list): List of file paths to chunk files
         
     Returns:
-        str: Concatenated content of all chunks
+        str: Concatenated content of all chunks with proper formatting
     """
     content = []
+    seen_content = set()  # To avoid duplicate content
     
     for path in file_paths:
         try:
-            # Convert to Path object to handle different OS path formats
-            path_obj = Path(path)
+            # Normalize path separators
+            normalized_path = path.replace("\\", "/")
             
-            # Check if the path exists directly
-            if path_obj.exists():
-                with open(path_obj, 'r', encoding='utf-8') as file:
-                    content.append(file.read())
-                continue
-                
-            # If not, try to find it in the chunks directory
-            filename = path_obj.name
+            # Try different ways to find the file
+            file_content = None
             
-            # Try direct path in chunks directory
-            chunk_path = Path(CHUNKS_DIR) / filename
-            if chunk_path.exists():
-                with open(chunk_path, 'r', encoding='utf-8') as file:
-                    content.append(file.read())
-                continue
-                
-            # If the file is not found, try to search for it in the chunks directory
-            for root, dirs, files in os.walk(CHUNKS_DIR):
-                if filename in files:
-                    full_path = Path(root) / filename
-                    with open(full_path, 'r', encoding='utf-8') as file:
-                        content.append(file.read())
-                    break
-            else:
-                print(f"Warning: Chunk file not found: {path}")
+            # 1. Try direct path in chunks directory
+            full_path = os.path.join(CHUNKS_DIR, normalized_path)
+            if os.path.exists(full_path):
+                with open(full_path, 'r', encoding='utf-8') as file:
+                    file_content = file.read().strip()
+            
+            # 2. Try with just the filename
+            if not file_content:
+                filename = os.path.basename(normalized_path)
+                chunk_path = os.path.join(CHUNKS_DIR, filename)
+                if os.path.exists(chunk_path):
+                    with open(chunk_path, 'r', encoding='utf-8') as file:
+                        file_content = file.read().strip()
+            
+            # 3. Search recursively through chunks directory
+            if not file_content:
+                filename = os.path.basename(normalized_path)
+                for root, dirs, files in os.walk(CHUNKS_DIR):
+                    if filename in files:
+                        full_path = os.path.join(root, filename)
+                        with open(full_path, 'r', encoding='utf-8') as file:
+                            file_content = file.read().strip()
+                        break
+            
+            # Add content if found and not a duplicate
+            if file_content and file_content not in seen_content:
+                seen_content.add(file_content)
+                content.append(file_content)
                 
         except Exception as e:
             print(f"Error reading chunk file {path}: {e}")
@@ -126,4 +142,110 @@ def get_chunk_content(file_paths):
     if not content:
         return "No relevant content found."
         
-    return "\n\n".join(content) 
+    # Join chunks with clear separation
+    return "\n\n---\n\n".join(content)
+
+def get_chunks_for_display(file_paths):
+    """
+    Read the content of chunk files for display in the UI.
+    
+    Args:
+        file_paths (list): List of file paths to chunk files
+        
+    Returns:
+        list: List of dictionaries with chunk information
+    """
+    chunks = []
+    seen_paths = set()  # To avoid duplicate chunks
+    
+    for path in file_paths:
+        try:
+            # Skip if we've already processed this path
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            
+            # Normalize path separators
+            normalized_path = path.replace("\\", "/")
+            
+            # Try different ways to find the file
+            file_path = None
+            file_content = None
+            
+            # 1. Try direct path in chunks directory
+            full_path = os.path.join(CHUNKS_DIR, normalized_path)
+            if os.path.exists(full_path):
+                file_path = full_path
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    file_content = file.read()
+            
+            # 2. Try with just the filename
+            if not file_content:
+                filename = os.path.basename(normalized_path)
+                chunk_path = os.path.join(CHUNKS_DIR, filename)
+                if os.path.exists(chunk_path):
+                    file_path = chunk_path
+                    with open(file_path, 'r', encoding='utf-8') as file:
+                        file_content = file.read()
+            
+            # 3. Search recursively through chunks directory
+            if not file_content:
+                filename = os.path.basename(normalized_path)
+                for root, dirs, files in os.walk(CHUNKS_DIR):
+                    if filename in files:
+                        file_path = os.path.join(root, filename)
+                        with open(file_path, 'r', encoding='utf-8') as file:
+                            file_content = file.read()
+                        break
+            
+            # Add chunk if found
+            if file_path and file_content:
+                # Create a Path object for easier path manipulation
+                path_obj = Path(file_path)
+                
+                # Get the filename
+                filename = path_obj.name
+                
+                # Create a more readable title from the path
+                parts = path_obj.parts
+                doc_name = None
+                section = None
+                
+                # Look for document name pattern (usually contains underscore)
+                for part in parts:
+                    if '_' in part and not part.startswith('chunk_'):
+                        doc_name = part.replace('_', ' ').replace('-', ' ')
+                        break
+                
+                # Look for chapter/section pattern
+                for part in parts:
+                    if part.startswith('ch') and len(part) > 2:
+                        section = part.replace('_', ' ')
+                        break
+                
+                # Create a readable title
+                if doc_name and section:
+                    title = f"{doc_name} - {section}"
+                elif doc_name:
+                    title = doc_name
+                else:
+                    title = filename
+                
+                # Get the relative path for display
+                try:
+                    rel_path = os.path.relpath(file_path, BASE_DIR)
+                except ValueError:
+                    # Handle case where paths are on different drives
+                    rel_path = str(file_path)
+                
+                chunks.append({
+                    "id": filename,
+                    "title": title,
+                    "path": rel_path,
+                    "content": file_content
+                })
+                
+        except Exception as e:
+            print(f"Error processing chunk file {path}: {e}")
+    
+    return chunks 
