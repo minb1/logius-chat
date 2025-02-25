@@ -19,7 +19,7 @@ redis_client = redis.Redis(
 
 def create_chat_session():
     """
-    Create a new chat session with a unique ID and 24-hour TTL
+    Create a new chat session with a unique ID and 30 min TTL
     
     Returns:
         str: The unique chat session ID
@@ -28,7 +28,7 @@ def create_chat_session():
     # Store creation timestamp
     redis_client.hset(f"chat:{chat_id}", "created_at", datetime.now().isoformat())
     
-    # Set TTL for both the chat metadata and messages (e.g., 24 hours = 86400 seconds)
+    # Set TTL for both the chat metadata and messages
     redis_client.expire(f"chat:{chat_id}", 1800)
     redis_client.expire(f"chat:{chat_id}:messages", 1800)
     
