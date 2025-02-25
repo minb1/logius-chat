@@ -6,6 +6,10 @@ from prompt_layer.base_template import create_prompt
 import os
 from pathlib import Path
 
+# Get base directory
+BASE_DIR = Path(__file__).resolve().parent.parent
+CHUNKS_DIR = os.path.join(BASE_DIR, 'data', 'chunks')
+
 def process_query(query, chat_id=None):
     print("Processing query: ", query)
     """
@@ -37,15 +41,72 @@ def process_query(query, chat_id=None):
     chunks = []
     for path in chunk_paths:
         try:
-            with open(path, 'r', encoding='utf-8') as file:
+            # Convert to Path object to handle different OS path formats
+            path_obj = Path(path)
+            
+            # Check if the path exists directly
+            if path_obj.exists():
+                file_path = path_obj
+            else:
+                # Try to find the file in chunks directory by name
+                filename = path_obj.name
+                chunk_path = Path(CHUNKS_DIR) / filename
+                
+                if chunk_path.exists():
+                    file_path = chunk_path
+                else:
+                    # Search for the file in chunks directory
+                    for root, dirs, files in os.walk(CHUNKS_DIR):
+                        if filename in files:
+                            file_path = Path(root) / filename
+                            break
+                    else:
+                        print(f"Warning: Chunk file not found: {path}")
+                        continue
+            
+            # Read the content
+            with open(file_path, 'r', encoding='utf-8') as file:
                 content = file.read()
+                
                 # Get the filename without extension
-                filename = os.path.basename(path)
+                filename = file_path.name
+                
+                # Create a more readable title from the path
+                # Extract document name and section from path
+                parts = file_path.parts
+                doc_name = None
+                section = None
+                
+                # Look for document name pattern (usually contains underscore)
+                for part in parts:
+                    if '_' in part and not part.startswith('chunk_'):
+                        doc_name = part.replace('_', ' ').replace('-', ' ')
+                        break
+                
+                # Look for chapter/section pattern
+                for part in parts:
+                    if part.startswith('ch') and len(part) > 2:
+                        section = part.replace('_', ' ')
+                        break
+                
+                # Create a readable title
+                if doc_name and section:
+                    title = f"{doc_name} - {section}"
+                elif doc_name:
+                    title = doc_name
+                else:
+                    title = filename
+                
                 # Get the relative path for display
-                rel_path = os.path.relpath(path, Path(__file__).resolve().parent.parent)
+                try:
+                    rel_path = os.path.relpath(file_path, BASE_DIR)
+                except ValueError:
+                    # Handle case where paths are on different drives
+                    rel_path = str(file_path)
+                
                 chunks.append({
                     "id": filename,
-                    "title": filename,
+                    "title": title,
                     "path": rel_path,
                     "content": content
                 })

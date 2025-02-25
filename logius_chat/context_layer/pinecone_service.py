@@ -1,5 +1,4 @@
 import os
-from pinecone import Pinecone
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -10,15 +9,24 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 CHUNKS_DIR = os.path.join(BASE_DIR, 'data', 'chunks')
 
+# Try to import Pinecone
+try:
+    from pinecone import Pinecone
+    pinecone_available = True
+except ImportError:
+    print("WARNING: Pinecone package not available or incompatible version. Using fallback mode.")
+    pinecone_available = False
+
 # Get API keys
 pinecone_api_key = os.getenv("PINECONE_API_KEY")
 pinecone_environment = os.getenv("PINECONE_ENVIRONMENT")
 
 if not pinecone_api_key or not pinecone_environment:
     print("WARNING: PINECONE_API_KEY or PINECONE_ENVIRONMENT not found in environment variables. Please set them in your .env file.")
+
 # Initialize Pinecone if API keys are available
 index = None
-if pinecone_api_key and pinecone_environment:
+if pinecone_available and pinecone_api_key and pinecone_environment:
     try:
         pinecone = Pinecone(api_key=pinecone_api_key)
         # Get the Pinecone index
@@ -37,6 +45,12 @@ def search_similar_documents(query_embedding, top_k=20):
     Returns:
         list: List of file paths to the most similar document chunks
     """
+    if not pinecone_available:
+        print("Warning: Pinecone is not available. Using fallback mode.")
+        # Return some sample files from the chunks directory
+        chunk_files = list(Path(CHUNKS_DIR).glob('**/*.txt'))
+        return [str(path) for path in chunk_files[:top_k]] if chunk_files else []
+        
     if not index:
         print("Error: Pinecone index not initialized. Missing API keys.")
         return []
@@ -77,23 +91,35 @@ def get_chunk_content(file_paths):
     
     for path in file_paths:
         try:
-            # Check if the path is absolute or relative
-            if not os.path.isabs(path):
-                # If it's a relative path, try to find it in the data/chunks directory
-                # First, get just the filename part (e.g., "chunk_001.txt")
-                filename = os.path.basename(path)
-                # Get the subdirectory structure (e.g., "Logius-standaarden_API-Standaarden-Beheermodel/ch06_Communicatie")
-                subdir = os.path.dirname(path)
-                # Construct the full path in data/chunks
-                chunk_path = os.path.join(CHUNKS_DIR, subdir, filename)
-                if os.path.exists(chunk_path):
-                    path = chunk_path
+            # Convert to Path object to handle different OS path formats
+            path_obj = Path(path)
             
-            if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as file:
+            # Check if the path exists directly
+            if path_obj.exists():
+                with open(path_obj, 'r', encoding='utf-8') as file:
                     content.append(file.read())
+                continue
+                
+            # If not, try to find it in the chunks directory
+            filename = path_obj.name
+            
+            # Try direct path in chunks directory
+            chunk_path = Path(CHUNKS_DIR) / filename
+            if chunk_path.exists():
+                with open(chunk_path, 'r', encoding='utf-8') as file:
+                    content.append(file.read())
+                continue
+                
+            # If the file is not found, try to search for it in the chunks directory
+            for root, dirs, files in os.walk(CHUNKS_DIR):
+                if filename in files:
+                    full_path = Path(root) / filename
+                    with open(full_path, 'r', encoding='utf-8') as file:
+                        content.append(file.read())
+                    break
             else:
                 print(f"Warning: Chunk file not found: {path}")
+                
         except Exception as e:
             print(f"Error reading chunk file {path}: {e}")
     
