@@ -46,10 +46,8 @@ def search_similar_documents(query_embedding, top_k=50):
         list: List of file paths to the most similar document chunks
     """
     if not pinecone_available:
-        print("Warning: Pinecone is not available. Using fallback mode.")
-        # Return some sample files from the chunks directory
-        chunk_files = list(Path(CHUNKS_DIR).glob('**/*.txt'))
-        return [str(path) for path in chunk_files[:top_k]] if chunk_files else []
+        print("Warning: Pinecone is not available. No context will be used.")
+        return []
         
     if not index:
         print("Error: Pinecone index not initialized. Missing API keys.")
